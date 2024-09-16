@@ -25,6 +25,9 @@
  * SOFTWARE.
  */
 
+#include "libsais.h"
+#include "delta_sa.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -33,6 +36,9 @@
 #include <memory>
 
 #include "lzend.hpp"
+
+bool PRINT_DETAIL = true;
+bool USE_FILE = true;
 
 uintmax_t timestamp() {
     return std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -46,9 +52,53 @@ int main(int argc, char** argv) {
     
     // load input file
     std::string s;
-    {
+    /*{
         std::ifstream ifs(argv[1]);
         s = std::string(std::istreambuf_iterator<char>(ifs), {});
+    }*/
+
+    //s = "ababbabb"; // Seg fault
+    s = "dnkldflgfdfskmldfskdfsdfmkdflkdflskdfslk"; // No SegFault
+
+    int32_t n = s.length();
+
+    int32_t delta = 4;
+    int32_t sample_size = (n-1) / delta;
+
+    // construct suffix array of input
+    auto sa = std::make_unique<int32_t[]>(n);
+    auto dsa = std::make_unique<int32_t[]>(n);
+    auto dsa_sample = std::make_unique<int32_t[]>(sample_size);
+    libsais((uint8_t const*) s.data(), sa.get(), n, 0, nullptr);
+
+    for (int32_t i = 0; i < n; i++)
+    {
+        if (i == 0) {
+            dsa[i] = sa[i];
+        } else {
+            dsa[i] = sa[i] - sa[i-1];
+        }
+        //std::cout << i << "-th SA entry: " << sa[i] << std::endl;
+        if (PRINT_DETAIL)
+            std::cout << i << "-th DSA entry: " << dsa[i] << std::endl;
+    }
+
+    // construct sample
+    for (int32_t i = 0; i < sample_size; i++)
+    {
+        dsa_sample[i] = sa[(i+1) * delta];
+        if (PRINT_DETAIL)
+            std::cout << i << "-th DSA sample entry: " << dsa_sample[i] << std::endl;
+    }
+    
+    // test efficient access on delta suffix array
+    for (int32_t i = 0; i < n; i++)
+    {
+        if (PRINT_DETAIL) {
+            std::cout << i << "-th SA entry (calculated via DSA): " << sa_value(dsa.get(), dsa_sample.get(), delta, i)
+                << " (naive: " << sa_value_naive(dsa.get(), i)
+                << ", SA: " << sa[i] << ")" << std::endl;
+        }
     }
     
     // parse
