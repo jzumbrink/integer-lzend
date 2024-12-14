@@ -58,9 +58,11 @@ public:
         rmq_ = std::make_unique<Level[]>(num_levels);
 
         // build first level
-        rmq_[0] = std::make_unique<Index[]>(n-1);
-        for(Index i = 0; i < n-1; i++) {
-            rmq_[0][i] = leq(data[i], data[i+1]) ? i : i+1;
+        if (n > 1) {
+            rmq_[0] = std::make_unique<Index[]>(n-1);
+            for(Index i = 0; i < n-1; i++) {
+                rmq_[0][i] = leq(data[i], data[i+1]) ? i : i+1;
+            }
         }
 
         // build higher levels
