@@ -12,7 +12,7 @@
 #include <rmq/rmq.hpp>
 #include <ordered/btree/map.hpp>
 
-namespace int_lzend {
+namespace lzend {
     
 using Index = int32_t;
 
