@@ -1,64 +1,149 @@
+/**
+ * part of pdinklag/lzend
+ * 
+ * MIT License
+ * 
+ * Copyright (c) Patrick Dinklage
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef _INTEGER_LZEND_HPP
 #define _INTEGER_LZEND_HPP
 
-#include "libsais.h"
+#include "libsais/libsais.h"
+#include "ips4o.hpp"
 
 #include <cstdint>
 #include <iostream>
 #include <functional>
 #include <vector>
 #include <memory>
+#include <algorithm>
 
 #include <rmq/rmq.hpp>
 #include <ordered/btree/map.hpp>
+
+#include "time.hpp"
 
 namespace lzend {
     
 using Index = int32_t;
 
 struct IntPhrase {
-    Index lnk;
-    Index len;
-    Index ext;
+    Index lnk; // phrase id, where the source ends (a new phrase can extend multiple phrases)
+    Index len; // len of phrase (including the extension)
+    Index ext; // extension
 };
 
-std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = false) {
+struct DSAValueIndexPair { // used for constructing the transformed reverse delta suffix array 
+    Index value;
+    Index index;
+
+    bool operator < (const DSAValueIndexPair &other) const {
+        return value < other.value;
+    }
+};
+
+/*
+Reverses (NOT inverses) the given delta suffix array and transforms every value into a non-negative value, such that
+the order of the values is preserved, but the distances between the values are reduced to one.
+This transformation makes the generation of the suffix array of the reversed delta suffix array faster,
+ because the suffix array construction is linear with regards to the size of the given alphabet.
+*/
+std::unique_ptr<Index[]> reverse_delta_suffix_array(Index dsa[], Index const n, Index* new_alphabet_size) {
+    std::vector<DSAValueIndexPair> value_index_pairs;
+    value_index_pairs.reserve(n);
+
+    for (Index i = 0; i < n; i++) {
+        value_index_pairs.push_back({dsa[i], i});
+    }
+
+    // sort all value index pairs by the original delta suffix array value
+    # ifdef DDEBUG
+    auto const timer_sort = timestamp();
+    # endif
+    //std::sort(value_index_pairs.begin(), value_index_pairs.end());
+    ips4o::sort(value_index_pairs.begin(), value_index_pairs.end());
+    # ifdef DDEBUG
+    auto const time_diff = timestamp() - timer_sort;
+    std::cout << "\t\tvalue index pairs were sorted in " << time_diff << " ms" << std::endl;
+    # endif
+
+
+    // use this sorted vector of value index pairs to construct the transformed reverse delta suffix array
+    std::unique_ptr<Index[]> rdsa = std::make_unique<Index[]>(n);
+
+    Index last_value = -1;
+    bool first_iteration = true;
+    Index new_value = -1;
+    
+    for (auto it = value_index_pairs.begin(); it != value_index_pairs.end(); ++it) {
+        if (it->value != last_value || first_iteration) {
+            // if the current value is unequal to the last value, the reverse delta suffix array should also have an unequal value
+            // if the current value is equal to the last value, the rdsa should have the same value for both indices 
+            last_value = it->value;
+            new_value++;
+            first_iteration = false;
+        }
+        rdsa[n - it->index - 1] = new_value;
+    }
+
+    *new_alphabet_size = new_value + 1; // use this pointer to "return" the alphabet size, because it is important to know for the sa construction
+    return rdsa;
+}
+
+std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = false, Index h = -1) {
+    # ifdef DEBUG
+    print_progress = true;
+    # endif
+
     if(print_progress) std::cout << "Integer-LZ-End input: n=" << n << std::endl;
 
-    // find minimum of delta suffix array
-    Index minimum = 0;
-    for (Index i = 0; i < n; i++)
-    {
-        if (dsa[i] < minimum) {
-            minimum = dsa[i];
-        }
-    }
-    Index absmin = abs(minimum);
-    
-
     // reverse delta suffix array
-    Index rdsa[n];
-    for (Index i = 0; i < n; i++)
-    {
-        rdsa[n - 1 - i] = dsa[i] + absmin; // TODO evaluate if the best variant is used
-        std::cout << rdsa[n-1-i] << std::endl;
-    }
+    if(print_progress) std::cout << "\treverse delta suffix array..." << std::endl;
+
+    Index new_alphabet_size = -1;
+    std::unique_ptr<Index[]> rdsa = reverse_delta_suffix_array(dsa, n, &new_alphabet_size);
 
     // construct suffix array of reverse delta suffix array
     if(print_progress) std::cout << "\tconstruct suffix array ..." << std::endl;
     auto int_sa = std::make_unique<Index[]>(n);
-    std::cout << "hi" << std::endl;
-    libsais_int(rdsa, int_sa.get(), n, n + absmin, 0); // TODO
-    // Segmentation fault, when negative Integer are present in rdsa??
+    # ifdef DEBUG
+    auto const timer_sa_construction = timestamp(); 
+    # endif
+    
+    // Segmentation fault, when negative Integer are present in rdsa
     // libsais_int only works on non-negative integers
-    // Variant 1: convert dsa into an array of non-negative integers, i.e. add the absolute of the lowest negative number to all numbers
-    // Variant 2: use unsigned integers, i.e. uint32_t
+    // squash all values into a dense intervall of non-negative integers to reduce alphabet size
+    libsais_int(rdsa.get(), int_sa.get(), n, new_alphabet_size, 0);
+    
+    # ifdef DEBUG
+    auto const td_sa_construction = timestamp() - timer_sa_construction;
+    std::cout << "\t\tsuffix array of reverse delta suffix array was constructed in " << td_sa_construction << " ms" << std::endl;
+    std::cout << "\tconstruct LCP array ..." << std::endl;
+    # endif
 
     // construct PLCP array and the LCP array from it
-    if(print_progress) std::cout << "\tconstruct LCP array ..." << std::endl;
     auto isa = std::make_unique<Index[]>(n);
     auto& plcp = isa;
-    libsais_plcp_int(rdsa, int_sa.get(), isa.get(), n);
+    libsais_plcp_int(rdsa.get(), int_sa.get(), isa.get(), n);
 
     auto lcp = std::make_unique<Index[]>(n);
     libsais_lcp(plcp.get(), int_sa.get(), lcp.get(), n);
@@ -100,8 +185,10 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
     }; 
 
     // parse
-    std::cout << "\tparse ... ";
-    std::cout.flush();
+    if (print_progress) {
+        std::cout << "\tparse ... " << std::endl;
+        std::cout.flush();
+    }
 
     std::vector<IntPhrase> parsing;
     parsing.push_back({0, 1, dsa[0]}); // initial empty phrase
@@ -152,12 +239,9 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
             ++z;
         }
     }
-    
-    std::cout << "n=" << n << std::endl;
 
     return parsing;
 }
-
 }
 
 #endif

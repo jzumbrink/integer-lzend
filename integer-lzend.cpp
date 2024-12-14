@@ -1,20 +1,15 @@
-#include "libsais.h"
+#include "libsais/libsais.h"
 
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 
 #include <fstream>
 #include <memory>
 
 #include "integer-lzend.hpp"
+#include "time.hpp"
 
-bool PRINT_DETAIL = true;
-bool USE_FILE = true;
-
-uintmax_t timestamp() {
-    return std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
-}
+#define PRINT_DETAIL true
 
 int main(int argc, char** argv) {
     if(argc < 2) {
@@ -34,10 +29,18 @@ int main(int argc, char** argv) {
     // construct suffix array of input
     auto sa = std::make_unique<int32_t[]>(n);
     libsais((uint8_t const*) s.data(), sa.get(), n, 0, nullptr);
+
+    // construct differential suffix array (introduces true repetitions)
+    auto dsa = std::make_unique<int32_t[]>(n);
+    if (n > 0) dsa[0] = sa[0];
     
+    for (int i = 1; i < n; i++) {
+        dsa[i] = sa[i] - sa[i - 1];
+    }
+
     // parse
     auto const t0 = timestamp();
-    auto const z = lzend::parse(sa.get(), n, true).size();
+    auto const z = lzend::parse(dsa.get(), n, PRINT_DETAIL).size();
     auto const dt = timestamp() - t0;
     std::cout << "-> z=" << z << " (" << dt << " ms)" << std::endl;
     return 0;
