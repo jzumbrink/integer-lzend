@@ -5,11 +5,20 @@
 
 #include <fstream>
 #include <memory>
+#include <vector>
 
 #include "integer-lzend.hpp"
 #include "time.hpp"
 
 #define PRINT_DETAIL true
+
+int32_t max_phrase_length(std::vector<lzend::IntPhrase> const &phrases) {
+    int32_t result = -1;
+    for (lzend::IntPhrase p : phrases) {
+        if (p.len > result) result = p.len;
+    }
+    return result;
+}
 
 int main(int argc, char** argv) {
     if(argc < 2) {
@@ -40,8 +49,9 @@ int main(int argc, char** argv) {
 
     // parse
     auto const t0 = timestamp();
-    auto const z = lzend::parse(dsa.get(), n, PRINT_DETAIL).size();
+    std::vector<lzend::IntPhrase> const phrases = lzend::parse(dsa.get(), n, PRINT_DETAIL);
     auto const dt = timestamp() - t0;
-    std::cout << "-> z=" << z << " (" << dt << " ms)" << std::endl;
+    std::cout << "-> z=" << phrases.size() << " (" << dt << " ms)" << std::endl;
+    std::cout << "-> max_phrase_length=" << max_phrase_length(phrases) << std::endl;
     return 0;
 }
