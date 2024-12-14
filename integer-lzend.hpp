@@ -208,7 +208,7 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
                 p1 = c.lnk;
                 if(i > len1) {
                     if(c.lnk == z-1) c = f(c.lex_pos);
-                    if(c.len >= len2) p2 = c.lnk;
+                    if(c.len >= len2 && (h == -1 || len2 < h)) p2 = c.lnk;
                 }
             }
         };
@@ -227,12 +227,16 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
             --z;
             
             parsing.back() = IntPhrase { p2, len2 + 1, dsa[i] };
-        } else if(p1 != -1) {
+        } else if(p1 != -1 && (h == -1 || len1 < h)) {
             // extend last phrase
             parsing.back() = IntPhrase { p1, len1 + 1, dsa[i] };
         } else {
             // lazily mark previous phrase
-            marked.insert(isa_last, z);
+            if (h == -1 || parsing[z].len < h) {
+                marked.insert(isa_last, z);
+            } else {
+                //std::cout << "parsing[z].len=" << parsing[z].len << std::endl;
+            }
 
             // begin new phrase
             parsing.push_back(IntPhrase { 0, 1, dsa[i] });

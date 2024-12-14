@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
 
     // parse
     auto const t0 = timestamp();
-    std::vector<lzend::IntPhrase> const phrases = lzend::parse(dsa.get(), n, PRINT_DETAIL);
+    std::vector<lzend::IntPhrase> const phrases = lzend::parse(dsa.get(), n, PRINT_DETAIL, 10);
     auto const dt = timestamp() - t0;
     std::cout << "-> z=" << phrases.size() << " (" << dt << " ms)" << std::endl;
     std::cout << "-> max_phrase_length=" << max_phrase_length(phrases) << std::endl;
