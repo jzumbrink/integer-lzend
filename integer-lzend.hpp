@@ -205,10 +205,10 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
         auto find_copy_source = [&](std::function<Candidate(Index)> f){
             auto c = f(isa_last);
             if(c.len >= len1) {
-                p1 = c.lnk;
-                if(i > len1) {
+                p1 = c.lnk; // only mark the small enough phrases omits the phrase length check here
+                if(i > len1 && (h == -1 || len2 < h)) { // only check for merge candidates if the new phrase would be small enough (or the max phrase size is unbounded)
                     if(c.lnk == z-1) c = f(c.lex_pos);
-                    if(c.len >= len2 && (h == -1 || len2 < h)) p2 = c.lnk;
+                    if(c.len >= len2) p2 = c.lnk;
                 }
             }
         };
@@ -232,10 +232,8 @@ std::vector<IntPhrase> parse(Index dsa[], Index const n, bool print_progress = f
             parsing.back() = IntPhrase { p1, len1 + 1, dsa[i] };
         } else {
             // lazily mark previous phrase
-            if (h == -1 || parsing[z].len < h) {
+            if (h == -1 || parsing[z].len < h) { // only mark previous phrase if the phrase length is unbounded or the phrase length is smaller than the bound
                 marked.insert(isa_last, z);
-            } else {
-                //std::cout << "parsing[z].len=" << parsing[z].len << std::endl;
             }
 
             // begin new phrase
